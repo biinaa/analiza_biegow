@@ -1,0 +1,174 @@
+---
+title: "Analiza biegów"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+runtime: shiny    
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(ggplot2)
+library(ggthemes)
+library(plotly)
+library(leaflet)
+library(scales)
+
+load('dane_shiny.RData')
+
+dataset <- routes_meta_plots
+
+```
+
+Sidebar {.sidebar}
+=====================================
+
+Aplikacja pozwala na analizę treningów dla zadanego zakresu dat.
+
+```{r}
+dateRangeInput('dateRange',
+    label = 'Czas analizy: ',
+    start = as.Date(min(dataset$Date)), end = as.Date(max(dataset$Date))
+)
+
+
+```
+
+Mapy tras przestawione są dla tego miasta, gdzie odnotowano więcej treningów.
+
+Druga plansza pozwala sprawdzić wpływ warunków atmosferycznych na osiągane wyniki.
+
+Podstawowe statystyki treningów
+======================================================================
+
+Outputs Column {data-width=650}
+-----------------------------------------------------------------------
+
+
+### Tempo biegów
+
+```{r}
+dataset <- reactive({
+  routes_meta_plots %>%
+        filter(as.Date(Date) >= input$dateRange[1] & as.Date(Date) <= input$dateRange[2])
+})
+
+renderPlotly({
+
+pace_plot <- ggplot(dataset(), aes(Date, AvgPace, label = Average.Pace, label2 = Date)) +
+    geom_line(colour = "#377eb8", size = 0.8) + 
+    theme_hc() + 
+    xlab("") +
+    ylab("tempo [MM:SS]") +
+    scale_y_datetime(labels = date_format("%M:%S"))
+
+ggplotly(pace_plot, tooltip = c("label", "label2"))  
+    
+})
+```
+
+
+### Trasy biegowe
+
+```{r}
+
+dataset_map <- reactive({
+  city <- routes_meta_plots %>%
+            filter(as.Date(Date) >= input$dateRange[1] & as.Date(Date) <= input$dateRange[2]) %>%
+            select(City) %>%
+            group_by(City) %>%
+            summarise(ile = n()) %>%
+            as.data.frame()
+  city <- city[which.max(city$ile), 1]
+  
+  routes_meta %>% 
+      filter(as.Date(Date) >= input$dateRange[1] & as.Date(Date) <= input$dateRange[2] & City == city)
+
+})
+
+# select city
+
+renderLeaflet({
+    leaflet() %>% 
+        addProviderTiles(providers$CartoDB.Positron) %>% 
+        addPolylines(lat = dataset_map()$latitude, lng = dataset_map()$longitude, weight = 1)
+})
+
+```
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Tygodniowo
+
+```{r}
+dataset <- reactive({
+  routes_meta_plots %>%
+        filter(as.Date(Date) >= input$dateRange[1] & as.Date(Date) <= input$dateRange[2])
+})
+
+renderPlotly({
+
+weekly_plot <- ggplot(dataset(), aes(WeekDay, label = ..count..)) +
+    geom_bar(fill = "#377eb8") +
+    xlab("dzień tygodnia") +
+    ylab("liczba biegów") +
+    theme_hc()
+
+ggplotly(weekly_plot)    
+    
+})
+```
+
+### Godzinowo
+
+```{r}
+
+dataset <- reactive({
+  routes_meta_plots %>%
+        filter(as.Date(Date) >= input$dateRange[1] & as.Date(Date) <= input$dateRange[2])
+})
+
+renderPlotly({
+
+hour_plot <- ggplot(dataset(), aes(Hour, label = ..count..)) +
+    geom_bar(fill = "#377eb8") +
+    xlab("godzina treningu") +
+    ylab("liczba biegów") +
+    theme_hc()
+
+ggplotly(hour_plot)
+})
+
+```
+
+
+Warunki pogodowe
+======================================================================
+
+### Temperatura a tempo biegu
+
+```{r}
+
+dataset <- reactive({
+  routes_meta_plots %>%
+        filter(as.Date(Date) >= input$dateRange[1] & as.Date(Date) <= input$dateRange[2])
+})
+
+renderPlotly({
+
+weather_plot <- ggplot(dataset(), aes(Temp2, AvgPace)) +
+    geom_boxplot(outlier.colour = "red", outlier.shape = 1, fill = "#377eb8") +
+    theme_hc() +
+    xlab("temperatura") +
+    ylab("tempo [MM:SS]") +
+    scale_y_datetime(labels = date_format("%M:%S"))
+
+weather_plotly <- ggplotly(weather_plot, tooltip = NULL)
+
+layout(weather_plotly, hovermode = FALSE)
+    
+})
+
+```
